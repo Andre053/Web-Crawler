@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,7 +33,7 @@ func main() {
 
 	m := make(map[string]int) // reference type
 
-	timer_done := make(chan (struct{}))
+	//timer_done := make(chan (struct{}))
 
 	url := get_user_url()
 
@@ -40,11 +41,11 @@ func main() {
 
 	fmt.Println("Searching", url, "to a depth of", max_depth)
 
-	go timer(timer_done)
+	//go timer(timer_done)
 
 	find_refs(url, url, max_depth, m)
 
-	timer_done <- struct{}{} // stop counting
+	//timer_done <- struct{}{} // stop counting
 
 	sorted := sort_popular(m)
 
@@ -72,17 +73,13 @@ func timer(done chan struct{}) {
 			break
 
 		default:
-
 			now = time.Now()
 			elapsed = now.Sub(start)
 			s = "\rSearch time:\t" + strconv.FormatFloat(elapsed.Seconds(), 'f', -1, 32)
 			stout.Write([]byte(s)) // timer
 			time.Sleep(5 * time.Microsecond)
-
 		}
-
 	}
-
 }
 
 // implement sort interface
@@ -160,13 +157,21 @@ func grab_data(url string) string {
 }
 
 func find_refs(url string, base string, max_depth int, ref map[string]int) {
+
+	// handling access to map
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	depth := 0 // start at base depth
 
-	ref_search(url, base, depth, max_depth, ref) // recursively searches to a max depth or until complete
+	ref_search(url, base, depth, max_depth, ref, &mu, &wg) // recursively searches to a max depth or until complete
+	wg.Wait()
 
 }
 
-func ref_search(url string, base string, depth int, max_depth int, ref map[string]int) {
+func ref_search(url string, base string, depth int, max_depth int, ref map[string]int, mu *sync.Mutex, wg *sync.WaitGroup) {
+
+	defer wg.Done()
 
 	content := grab_data(url)
 	if depth >= max_depth || content == "-1" {
@@ -189,15 +194,20 @@ func ref_search(url string, base string, depth int, max_depth int, ref map[strin
 			}
 			found = append(found, match)
 
+			// lock the writes
+			mu.Lock()
 			_, ok := ref[match] // two-value assignment
 			if ok {
 				ref[match] += 1
+				mu.Unlock()
+
 				return
 			}
-
 			ref[match] = 1
-			ref_search(match, base, depth, max_depth, ref) // recursive call, do this with threads, need locks
+			mu.Unlock()
 
+			wg.Add(1)
+			go ref_search(match, base, depth, max_depth, ref, mu, wg) // recursive call, do this with threads, need locks
 		}
 	}
 }
