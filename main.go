@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // need a data structure to hold all of the URLs
@@ -28,21 +32,57 @@ func main() {
 
 	m := make(map[string]int) // reference type
 
+	timer_done := make(chan (struct{}))
+
 	url := get_user_url()
 
 	max_depth := get_max_depth()
 
-	fmt.Println("Searching", url, "to a depth of", max_depth, "\n###################################################")
+	fmt.Println("Searching", url, "to a depth of", max_depth)
+
+	go timer(timer_done)
 
 	find_refs(url, url, max_depth, m)
 
+	timer_done <- struct{}{} // stop counting
+
 	sorted := sort_popular(m)
 
-	fmt.Println("###################################################\nFrequency of referenced websites found:")
+	fmt.Println("Frequency of referenced websites found:")
+	sorted.enumerate()
+}
 
-	for _, p := range sorted {
-		fmt.Println(p.Val, p.Key)
+func timer(done chan struct{}) {
+
+	var s string
+	var now time.Time
+	var elapsed time.Duration
+
+	start := time.Now()
+
+	fmt.Println("\n###################################################")
+
+	stout := bufio.NewWriter(os.Stdout)
+	for {
+		select {
+		case <-done:
+			now = time.Now()
+			elapsed = now.Sub(start)
+			fmt.Println("\rSearch time:\t" + strconv.FormatFloat(elapsed.Seconds(), 'f', -1, 32) + "\n###################################################\n")
+			break
+
+		default:
+
+			now = time.Now()
+			elapsed = now.Sub(start)
+			s = "\rSearch time:\t" + strconv.FormatFloat(elapsed.Seconds(), 'f', -1, 32)
+			stout.Write([]byte(s)) // timer
+			time.Sleep(5 * time.Microsecond)
+
+		}
+
 	}
+
 }
 
 // implement sort interface
@@ -52,6 +92,11 @@ type Pair struct {
 }
 type PairList []Pair
 
+func (pl PairList) enumerate() {
+	for _, p := range pl {
+		fmt.Println(p.Val, p.Key)
+	}
+}
 func (pl PairList) Len() int           { return len(pl) }
 func (pl PairList) Less(i, j int) bool { return pl[i].Val < pl[j].Val }
 func (pl PairList) Swap(i, j int)      { pl[i], pl[j] = pl[j], pl[i] }
@@ -103,7 +148,7 @@ func parse_input(url string) string {
 func grab_data(url string) string {
 	res, err := http.Get(url)
 	if err != nil {
-		fmt.Println("URL with error:", url)
+		//fmt.Println("URL with error:", url)
 		return "-1"
 	}
 
@@ -147,11 +192,11 @@ func ref_search(url string, base string, depth int, max_depth int, ref map[strin
 			_, ok := ref[match] // two-value assignment
 			if ok {
 				ref[match] += 1
-			} else {
-				ref[match] = 1
-				ref_search(match, base, depth, max_depth, ref) // recursive call, do this with threads, need locks
-
+				return
 			}
+
+			ref[match] = 1
+			ref_search(match, base, depth, max_depth, ref) // recursive call, do this with threads, need locks
 
 		}
 	}
