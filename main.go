@@ -31,26 +31,58 @@ import (
 
 func main() {
 
+	args := os.Args
+	url, max_depth := handle_args(args)
+
 	m := make(map[string]int) // reference type
 
-	//timer_done := make(chan (struct{}))
-
-	url := get_user_url()
-
-	max_depth := get_max_depth()
+	timer_done := make(chan (struct{}))
 
 	fmt.Println("Searching", url, "to a depth of", max_depth)
 
-	//go timer(timer_done)
+	go timer(timer_done)
 
 	find_refs(url, url, max_depth, m)
 
-	//timer_done <- struct{}{} // stop counting
+	timer_done <- struct{}{} // stop counting
 
 	sorted := sort_popular(m)
 
 	fmt.Println("Frequency of referenced websites found:")
 	sorted.enumerate()
+}
+
+func handle_args(args []string) (string, int) {
+	var max_depth int
+	var url string
+
+	max_depth = -1
+	url = ""
+
+	re := regexp.MustCompile(`[a-zA-Z]+.[a-z]`) // faster using compiled
+
+	// check the arguments
+	for _, v := range args[1:] {
+
+		if re.Find([]byte(v)) != nil {
+			url = parse_input(v)
+		}
+
+		// if a number assume it is max_depth
+		if val, err := strconv.Atoi(v); err == nil {
+			max_depth = val
+		}
+
+	}
+	if url == "" {
+		url = get_user_url()
+	}
+	if max_depth == -1 {
+		max_depth = get_max_depth()
+	}
+
+	return url, max_depth
+
 }
 
 func timer(done chan struct{}) {
@@ -164,6 +196,7 @@ func find_refs(url string, base string, max_depth int, ref map[string]int) {
 
 	depth := 0 // start at base depth
 
+	wg.Add(1)
 	ref_search(url, base, depth, max_depth, ref, &mu, &wg) // recursively searches to a max depth or until complete
 	wg.Wait()
 
