@@ -12,9 +12,10 @@
 
 # Notes
 - Final output sorts URLs based on frequency
+- Need better input validation for URLs, check multiple inputs
 
 # Extensions TODO
-- Show progress of URLs found 
-- Utilize concurrency
+- Show progress of URLs found -> Timer shows scrape duration
+- Utilize concurrency -> Done for web scraping
 - Get cookies
 - Enumerate all network calls made by a website
